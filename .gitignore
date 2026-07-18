@@ -1,0 +1,3 @@
+# Root-level ignores (frontend/ and backend/ have their own more specific .gitignore files)
+.DS_Store
+*.log

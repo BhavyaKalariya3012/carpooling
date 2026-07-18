@@ -1,0 +1,24 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+/* Always light-themed: the rest of the UI (cards, tables, forms) is styled
+   assuming a white background with dark text, so we intentionally do not
+   follow the OS's prefers-color-scheme here — doing so previously caused
+   dark-on-dark unreadable text on systems set to dark mode. */
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
