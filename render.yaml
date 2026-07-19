@@ -1,0 +1,35 @@
+# Render Blueprint for the CommuteShare FastAPI backend.
+# In Render: New -> Blueprint -> connect this repo. Set the secret env vars
+# (marked sync: false) in the dashboard after the service is created, then
+# run the DB migration (see README) before first use.
+services:
+  - type: web
+    name: commuteshare-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: GEMINI_MODEL
+        value: gemini-flash-latest
+      - key: MAPS_PROVIDER
+        value: ola
+      # Secrets — set these in the Render dashboard, not in source control.
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: MAPS_API_KEY
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: FRONTEND_ORIGIN
+        sync: false

@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     # AI - Gemini (per project decision, replacing Claude from tech.md)
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.0-flash"
+    GEMINI_MODEL: str = "gemini-flash-latest"
 
     # Maps provider (Ola Maps, replacing Google Maps from tech.md)
     MAPS_API_KEY: str = ""
@@ -44,8 +44,13 @@ class Settings(BaseSettings):
     RAZORPAY_KEY_ID: str = ""
     RAZORPAY_KEY_SECRET: str = ""
 
-    # CORS
+    # CORS. May be a single origin or a comma-separated list, e.g.
+    # "http://localhost:3000,https://commuteshare.vercel.app".
     FRONTEND_ORIGIN: str = "http://localhost:3000"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.FRONTEND_ORIGIN.split(",") if o.strip()]
 
 
 settings = Settings()
