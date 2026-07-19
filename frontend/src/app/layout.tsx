@@ -4,6 +4,8 @@ import Script from "next/script";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import NavBar from "@/components/nav-bar";
+import Footer from "@/components/footer";
+import ChatWidget from "@/components/chat-widget";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,6 +37,8 @@ export default function RootLayout({
         <AuthProvider>
           <NavBar />
           <main className="flex-1">{children}</main>
+          <Footer />
+          <ChatWidget />
         </AuthProvider>
       </body>
     </html>

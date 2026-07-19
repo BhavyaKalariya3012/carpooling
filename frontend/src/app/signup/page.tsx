@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -11,13 +11,14 @@ interface TokenResponse {
   token_type: string;
 }
 
-export default function SignupPage() {
+function SignupForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login } = useAuth();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [orgDomain, setOrgDomain] = useState("");
+  const [orgDomain, setOrgDomain] = useState(searchParams.get("domain") ?? "");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -116,6 +117,25 @@ export default function SignupPage() {
           Log in
         </Link>
       </p>
+
+      <p className="text-sm text-zinc-600">
+        Organization not registered yet?{" "}
+        <Link href="/organizations/register" className="font-medium text-zinc-900 underline">
+          Register your organization
+        </Link>
+      </p>
     </div>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto max-w-md px-4 py-16 text-sm text-zinc-500">Loading...</div>
+      }
+    >
+      <SignupForm />
+    </Suspense>
   );
 }

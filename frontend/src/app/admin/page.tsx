@@ -5,6 +5,16 @@ import { useRouter } from "next/navigation";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import type { AdminStats, AdminUser, AdminRide, AdminBooking } from "@/lib/types";
+import { BarChart, DonutChart, UtilizationBar, type ChartPoint } from "@/components/charts";
+
+interface AdminAnalytics {
+  rides_by_status: ChartPoint[];
+  bookings_by_status: ChartPoint[];
+  rides_per_day: ChartPoint[];
+  revenue_per_day: ChartPoint[];
+  seats_offered: number;
+  seats_booked: number;
+}
 
 const statusLabels: Record<string, string> = {
   booked: "Booked",
@@ -22,6 +32,7 @@ export default function AdminDashboardPage() {
   const router = useRouter();
 
   const [stats, setStats] = useState<AdminStats | null>(null);
+  const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [rides, setRides] = useState<AdminRide[]>([]);
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
@@ -32,13 +43,15 @@ export default function AdminDashboardPage() {
   async function loadAll() {
     setError(null);
     try {
-      const [s, u, r, b] = await Promise.all([
+      const [s, an, u, r, b] = await Promise.all([
         apiFetch<AdminStats>("/api/v1/admin/stats"),
+        apiFetch<AdminAnalytics>("/api/v1/admin/analytics"),
         apiFetch<AdminUser[]>("/api/v1/admin/users"),
         apiFetch<AdminRide[]>("/api/v1/admin/rides"),
         apiFetch<AdminBooking[]>("/api/v1/admin/bookings"),
       ]);
       setStats(s);
+      setAnalytics(an);
       setUsers(u);
       setRides(r);
       setBookings(b);
@@ -122,6 +135,29 @@ export default function AdminDashboardPage() {
           <StatCard label="Completed Bookings" value={stats.completed_bookings} />
           <StatCard label="Total Revenue" value={`₹${stats.total_revenue.toFixed(2)}`} />
         </div>
+      )}
+
+      {analytics && (
+        <section className="flex flex-col gap-4">
+          <h2 className="text-sm font-semibold text-zinc-900">Analytics</h2>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <ChartCard title="Rides by status">
+              <DonutChart data={analytics.rides_by_status} />
+            </ChartCard>
+            <ChartCard title="Bookings by status">
+              <DonutChart data={analytics.bookings_by_status} />
+            </ChartCard>
+            <ChartCard title="Rides per day (last 14 days)">
+              <BarChart data={analytics.rides_per_day} color="#059669" />
+            </ChartCard>
+            <ChartCard title="Revenue per day (last 14 days)">
+              <BarChart data={analytics.revenue_per_day} color="#f97316" valuePrefix="₹" />
+            </ChartCard>
+            <ChartCard title="Seat utilization">
+              <UtilizationBar offered={analytics.seats_offered} booked={analytics.seats_booked} />
+            </ChartCard>
+          </div>
+        </section>
       )}
 
       <section className="flex flex-col gap-3">
@@ -239,6 +275,15 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
     <div className="rounded-lg border border-zinc-200 bg-white p-4">
       <p className="text-xs font-medium uppercase text-zinc-500">{label}</p>
       <p className="mt-1 text-2xl font-semibold text-zinc-900">{value}</p>
+    </div>
+  );
+}
+
+function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-4 rounded-lg border border-zinc-200 bg-white p-5">
+      <h3 className="text-sm font-semibold text-zinc-900">{title}</h3>
+      <div className="flex-1">{children}</div>
     </div>
   );
 }

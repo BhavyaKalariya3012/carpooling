@@ -15,6 +15,20 @@ class AdminStats(BaseModel):
     total_revenue: float
 
 
+class ChartPoint(BaseModel):
+    label: str
+    value: float
+
+
+class AdminAnalytics(BaseModel):
+    rides_by_status: list[ChartPoint]
+    bookings_by_status: list[ChartPoint]
+    rides_per_day: list[ChartPoint]
+    revenue_per_day: list[ChartPoint]
+    seats_offered: int
+    seats_booked: int
+
+
 class AdminUserResponse(BaseModel):
     id: uuid.UUID
     full_name: str

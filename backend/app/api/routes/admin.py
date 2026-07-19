@@ -1,4 +1,5 @@
 import uuid
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
@@ -12,6 +13,8 @@ from app.models.ride import Ride, RideStatus
 from app.models.booking import Booking, BookingStatus
 from app.schemas.admin import (
     AdminStats,
+    AdminAnalytics,
+    ChartPoint,
     AdminUserResponse,
     AdminRideResponse,
     AdminBookingResponse,
@@ -19,6 +22,22 @@ from app.schemas.admin import (
 )
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
+
+# Human-friendly labels for enum values shown in charts.
+_STATUS_LABELS = {
+    "published": "Published",
+    "started": "Started",
+    "in_progress": "In Progress",
+    "completed": "Completed",
+    "payment_pending": "Payment Pending",
+    "payment_completed": "Payment Completed",
+    "booked": "Booked",
+    "cancelled": "Cancelled",
+}
+
+
+def _label(status_value: str) -> str:
+    return _STATUS_LABELS.get(status_value, status_value)
 
 
 @router.get("/stats", response_model=AdminStats)
@@ -68,6 +87,99 @@ def get_stats(
         total_bookings=total_bookings,
         completed_bookings=completed_bookings,
         total_revenue=float(total_revenue),
+    )
+
+
+@router.get("/analytics", response_model=AdminAnalytics)
+def get_analytics(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Aggregated, org-scoped data for the dashboard charts: status
+    breakdowns, a 14-day rides/revenue trend, and seat utilization."""
+    org_id = admin.organization_id
+
+    # --- Status breakdowns (for donut charts) ---
+    rides_status_rows = (
+        db.query(Ride.status, func.count(Ride.id))
+        .filter(Ride.organization_id == org_id)
+        .group_by(Ride.status)
+        .all()
+    )
+    rides_by_status = [
+        ChartPoint(label=_label(getattr(s, "value", s)), value=float(c)) for s, c in rides_status_rows
+    ]
+
+    bookings_status_rows = (
+        db.query(Booking.status, func.count(Booking.id))
+        .filter(Booking.organization_id == org_id)
+        .group_by(Booking.status)
+        .all()
+    )
+    bookings_by_status = [
+        ChartPoint(label=_label(getattr(s, "value", s)), value=float(c)) for s, c in bookings_status_rows
+    ]
+
+    # --- 14-day trend (grouped by ride departure date) ---
+    today = date.today()
+    window_start = today - timedelta(days=13)
+    day_expr = func.date(Ride.departure_time)
+
+    rides_rows = (
+        db.query(day_expr.label("d"), func.count(Ride.id))
+        .filter(Ride.organization_id == org_id, day_expr >= window_start)
+        .group_by("d")
+        .all()
+    )
+    rides_map = {str(d): int(c) for d, c in rides_rows}
+
+    revenue_rows = (
+        db.query(day_expr.label("d"), func.coalesce(func.sum(Booking.amount), 0))
+        .join(Ride, Booking.ride_id == Ride.id)
+        .filter(
+            Booking.organization_id == org_id,
+            Booking.status == BookingStatus.PAYMENT_COMPLETED,
+            day_expr >= window_start,
+        )
+        .group_by("d")
+        .all()
+    )
+    revenue_map = {str(d): float(a) for d, a in revenue_rows}
+
+    # Fill every day in the window so the trend line/bars are continuous.
+    rides_per_day: list[ChartPoint] = []
+    revenue_per_day: list[ChartPoint] = []
+    for i in range(14):
+        d = window_start + timedelta(days=i)
+        key = d.isoformat()
+        short = d.strftime("%d %b")
+        rides_per_day.append(ChartPoint(label=short, value=float(rides_map.get(key, 0))))
+        revenue_per_day.append(ChartPoint(label=short, value=revenue_map.get(key, 0.0)))
+
+    # --- Seat utilization ---
+    seats_offered = (
+        db.query(func.coalesce(func.sum(Ride.seats_total), 0))
+        .filter(Ride.organization_id == org_id)
+        .scalar()
+        or 0
+    )
+    seats_booked = (
+        db.query(func.coalesce(func.sum(Booking.seats_booked), 0))
+        .filter(
+            Booking.organization_id == org_id,
+            Booking.status != BookingStatus.CANCELLED,
+        )
+        .scalar()
+        or 0
+    )
+
+    return AdminAnalytics(
+        rides_by_status=rides_by_status,
+        bookings_by_status=bookings_by_status,
+        rides_per_day=rides_per_day,
+        revenue_per_day=revenue_per_day,
+        seats_offered=int(seats_offered),
+        seats_booked=int(seats_booked),
     )
 
 

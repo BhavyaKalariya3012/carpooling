@@ -81,6 +81,13 @@ export default function LoginPage() {
           Sign up
         </Link>
       </p>
+
+      <p className="text-sm text-zinc-600">
+        Organization not registered yet?{" "}
+        <Link href="/organizations/register" className="font-medium text-zinc-900 underline">
+          Register your organization
+        </Link>
+      </p>
     </div>
   );
 }

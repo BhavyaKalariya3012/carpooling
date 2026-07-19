@@ -2,10 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { apiFetch, ApiError } from "@/lib/api";
 import AddressAutocomplete from "@/components/address-autocomplete";
 import type { PlaceSuggestion } from "@/lib/ola-maps";
 import type { Ride, Vehicle } from "@/lib/types";
+
+const RouteMap = dynamic(() => import("@/components/route-map"), { ssr: false });
 
 export default function OfferRidePage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -130,6 +133,10 @@ export default function OfferRidePage() {
             required
           />
         </div>
+
+        {(pickupCoords || destinationCoords) && (
+          <RouteMap pickup={pickupCoords} destination={destinationCoords} />
+        )}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">

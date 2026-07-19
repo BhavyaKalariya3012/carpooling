@@ -1,10 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { apiFetch, ApiError } from "@/lib/api";
 import AddressAutocomplete from "@/components/address-autocomplete";
-import type { PlaceSuggestion } from "@/lib/ola-maps";
+import { fetchPlaceSuggestions, type PlaceSuggestion } from "@/lib/ola-maps";
 import type { Ride } from "@/lib/types";
+
+const RouteMap = dynamic(() => import("@/components/route-map"), { ssr: false });
+
+interface NLSearchResult {
+  pickup: string | null;
+  destination: string | null;
+  date: string | null;
+  time: string | null;
+  seats_needed: number;
+}
 
 export default function FindRidePage() {
   const [pickupAddress, setPickupAddress] = useState("");
@@ -20,6 +31,10 @@ export default function FindRidePage() {
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [bookedRideId, setBookedRideId] = useState<string | null>(null);
 
+  const [nlText, setNlText] = useState("");
+  const [nlBusy, setNlBusy] = useState(false);
+  const [nlNote, setNlNote] = useState<string | null>(null);
+
   function handlePickupSelect(place: PlaceSuggestion) {
     setPickupAddress(place.description);
     setPickupCoords({ lat: place.lat, lng: place.lng });
@@ -28,6 +43,34 @@ export default function FindRidePage() {
   function handleDestinationSelect(place: PlaceSuggestion) {
     setDestinationAddress(place.description);
     setDestinationCoords({ lat: place.lat, lng: place.lng });
+  }
+
+  async function runSearch(
+    pickup: { lat: number; lng: number },
+    destination: { lat: number; lng: number },
+    dateStr: string,
+    seats: number
+  ) {
+    setSearching(true);
+    setResults(null);
+    try {
+      const data = await apiFetch<Ride[]>("/api/v1/rides/search", {
+        method: "POST",
+        body: JSON.stringify({
+          pickup_lat: pickup.lat,
+          pickup_lng: pickup.lng,
+          destination_lat: destination.lat,
+          destination_lng: destination.lng,
+          date: dateStr ? new Date(dateStr).toISOString() : null,
+          seats_needed: seats,
+        }),
+      });
+      setResults(data);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Search failed");
+    } finally {
+      setSearching(false);
+    }
   }
 
   async function handleSearch(e: React.FormEvent) {
@@ -39,25 +82,70 @@ export default function FindRidePage() {
       return;
     }
 
-    setSearching(true);
-    setResults(null);
+    await runSearch(pickupCoords, destinationCoords, date, seatsNeeded);
+  }
+
+  // Natural Language Search: parse free text via Gemini, resolve the place
+  // names to coordinates through the map autocomplete, fill the form, and
+  // run the search automatically.
+  async function handleSmartSearch(e: React.FormEvent) {
+    e.preventDefault();
+    const text = nlText.trim();
+    if (!text || nlBusy) return;
+
+    setNlBusy(true);
+    setNlNote(null);
+    setError(null);
     try {
-      const data = await apiFetch<Ride[]>("/api/v1/rides/search", {
+      const parsed = await apiFetch<NLSearchResult>("/api/v1/ai/parse-search", {
         method: "POST",
-        body: JSON.stringify({
-          pickup_lat: pickupCoords.lat,
-          pickup_lng: pickupCoords.lng,
-          destination_lat: destinationCoords.lat,
-          destination_lng: destinationCoords.lng,
-          date: date ? new Date(date).toISOString() : null,
-          seats_needed: seatsNeeded,
-        }),
+        body: JSON.stringify({ text }),
       });
-      setResults(data);
+
+      let pCoords: { lat: number; lng: number } | null = null;
+      let dCoords: { lat: number; lng: number } | null = null;
+
+      if (parsed.pickup) {
+        const [best] = await fetchPlaceSuggestions(parsed.pickup);
+        if (best) {
+          pCoords = { lat: best.lat, lng: best.lng };
+          setPickupAddress(best.description);
+          setPickupCoords(pCoords);
+        }
+      }
+      if (parsed.destination) {
+        const [best] = await fetchPlaceSuggestions(parsed.destination);
+        if (best) {
+          dCoords = { lat: best.lat, lng: best.lng };
+          setDestinationAddress(best.description);
+          setDestinationCoords(dCoords);
+        }
+      }
+
+      const parsedDate = parsed.date ?? "";
+      if (parsedDate) setDate(parsedDate);
+      const seats = parsed.seats_needed > 0 ? parsed.seats_needed : 1;
+      setSeatsNeeded(seats);
+
+      const bits: string[] = [];
+      if (parsed.pickup) bits.push(`from ${parsed.pickup}`);
+      if (parsed.destination) bits.push(`to ${parsed.destination}`);
+      if (parsed.date) bits.push(`on ${parsed.date}`);
+      if (parsed.time) bits.push(`around ${parsed.time}`);
+      bits.push(`${seats} seat(s)`);
+      setNlNote(`Understood: ${bits.join(", ")}. Review below and adjust if needed.`);
+
+      if (pCoords && dCoords) {
+        await runSearch(pCoords, dCoords, parsedDate, seats);
+      } else if (!parsed.pickup && !parsed.destination) {
+        setNlNote("I couldn't find a pickup or destination in that. Try naming both places.");
+      }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Search failed");
+      setNlNote(
+        err instanceof ApiError ? err.message : "The AI search is unavailable right now."
+      );
     } finally {
-      setSearching(false);
+      setNlBusy(false);
     }
   }
 
@@ -86,6 +174,34 @@ export default function FindRidePage() {
           rides from your organization.
         </p>
       </div>
+
+      <form
+        onSubmit={handleSmartSearch}
+        className="flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-5"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-lg">✨</span>
+          <label className="text-sm font-semibold text-emerald-800">
+            Search in plain English
+          </label>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input
+            value={nlText}
+            onChange={(e) => setNlText(e.target.value)}
+            placeholder='e.g. "ride to Nirma University tomorrow 9am, 2 seats"'
+            className="min-w-0 flex-1 rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={nlBusy || !nlText.trim()}
+            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {nlBusy ? "Understanding…" : "Smart search"}
+          </button>
+        </div>
+        {nlNote && <p className="text-xs text-emerald-800">{nlNote}</p>}
+      </form>
 
       <form onSubmit={handleSearch} className="flex flex-col gap-4 rounded-lg border border-zinc-200 bg-white p-5">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -117,6 +233,10 @@ export default function FindRidePage() {
             />
           </label>
         </div>
+
+        {(pickupCoords || destinationCoords) && (
+          <RouteMap pickup={pickupCoords} destination={destinationCoords} />
+        )}
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
